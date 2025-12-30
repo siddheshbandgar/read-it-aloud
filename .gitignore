@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js build output
+.next/
+out/
+
+# Environment variables (contains secrets!)
+.env.local
+.env*.local
+.env
+
+# SQLite database
+*.db
+data/
+
+# Debug and logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+
+# Turbo
+.turbo
+
+# Vercel
+.vercel
+
+# Testing
+coverage/
