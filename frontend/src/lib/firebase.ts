@@ -11,6 +11,9 @@ let firebaseApp: admin.app.App | null = null;
 
 /**
  * Initialize Firebase Admin SDK
+ * Supports both:
+ * - FIREBASE_CREDENTIALS: JSON string (for Vercel/production)
+ * - FIREBASE_CREDENTIALS_PATH: File path (for local development)
  */
 function getFirebaseApp(): admin.app.App {
     if (firebaseApp) {
@@ -23,24 +26,36 @@ function getFirebaseApp(): admin.app.App {
         return firebaseApp;
     }
 
+    const credentialsJson = process.env.FIREBASE_CREDENTIALS;
     const credentialsPath = process.env.FIREBASE_CREDENTIALS_PATH;
     const bucket = process.env.FIREBASE_STORAGE_BUCKET;
-
-    if (!credentialsPath) {
-        throw new Error('FIREBASE_CREDENTIALS_PATH is not configured');
-    }
 
     if (!bucket) {
         throw new Error('FIREBASE_STORAGE_BUCKET is not configured');
     }
 
-    // Read credentials file
     let serviceAccount;
-    try {
-        const fileContent = readFileSync(credentialsPath, 'utf-8');
-        serviceAccount = JSON.parse(fileContent);
-    } catch (err) {
-        throw new Error(`Failed to read Firebase credentials from ${credentialsPath}: ${err}`);
+
+    // Try JSON string first (for Vercel deployment)
+    if (credentialsJson) {
+        try {
+            serviceAccount = JSON.parse(credentialsJson);
+            console.log('🔐 Using Firebase credentials from FIREBASE_CREDENTIALS env var');
+        } catch (err) {
+            throw new Error('Failed to parse FIREBASE_CREDENTIALS JSON');
+        }
+    }
+    // Fall back to file path (for local development)
+    else if (credentialsPath) {
+        try {
+            const fileContent = readFileSync(credentialsPath, 'utf-8');
+            serviceAccount = JSON.parse(fileContent);
+            console.log('🔐 Using Firebase credentials from file');
+        } catch (err) {
+            throw new Error(`Failed to read Firebase credentials from ${credentialsPath}: ${err}`);
+        }
+    } else {
+        throw new Error('No Firebase credentials configured. Set FIREBASE_CREDENTIALS or FIREBASE_CREDENTIALS_PATH');
     }
 
     firebaseApp = admin.initializeApp({
