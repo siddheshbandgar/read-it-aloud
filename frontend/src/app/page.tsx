@@ -70,11 +70,17 @@ export default function HomePage() {
         setError(null);
 
         try {
-            const newPodcast = await createPodcast(data);
-            setPodcast(newPodcast);
-            const completed = await pollPodcastStatus(newPodcast.id, (update) => setPodcast(update));
-            const transcriptData = await getTranscript(completed.id);
-            setTranscript(transcriptData);
+            // API now processes synchronously and returns completed podcast
+            const completedPodcast = await createPodcast(data);
+            setPodcast(completedPodcast);
+
+            // If completed, get transcript
+            if (completedPodcast.status === 'completed') {
+                const transcriptData = await getTranscript(completedPodcast.id);
+                setTranscript(transcriptData);
+            } else if (completedPodcast.status === 'failed') {
+                setError(completedPodcast.error_message || 'Failed to generate podcast');
+            }
         } catch (err: any) {
             setError(err.message || 'Failed to generate podcast');
         } finally {
