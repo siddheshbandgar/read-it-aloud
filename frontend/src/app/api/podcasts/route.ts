@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
 
             console.log(`✅ Podcast completed: ${podcast.id} (${Math.round(duration / 60)} min)`);
 
-            // Return the completed podcast with mapped fields
+            // Return the completed podcast with transcript included
             return NextResponse.json({
                 id: completedPodcast!.id,
                 user_id: completedPodcast!.userId,
@@ -114,6 +114,17 @@ export async function POST(request: NextRequest) {
                 share_slug: completedPodcast!.shareSlug,
                 created_at: completedPodcast!.createdAt,
                 completed_at: completedPodcast!.completedAt,
+                // Include transcript directly to avoid separate API call issues
+                transcript: {
+                    segments: segments.map((seg, i) => ({
+                        id: `seg-${i}`,
+                        sentence_index: i,
+                        text: seg.text,
+                        start_time: seg.startTime,
+                        end_time: seg.endTime,
+                    })),
+                    total_duration: duration,
+                },
             }, { status: 201 });
 
         } catch (error: any) {
