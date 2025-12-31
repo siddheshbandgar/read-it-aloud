@@ -1,24 +1,91 @@
 /**
- * POST /api/podcasts - Create a new podcast (SYNCHRONOUS for Vercel)
+ * POST /api/podcasts - Create a new podcast
  * GET /api/podcasts - List user's podcasts
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createPodcast, getPodcastsByUser, updatePodcast, Podcast } from '@/lib/db';
+import { createPodcast, getPodcastsByUser, updatePodcast, Podcast, createTranscriptBatch } from '@/lib/db';
 import { extractContent } from '@/lib/extractor';
 import { summarizeForDuration } from '@/lib/openai';
 import { generateAudio } from '@/lib/tts';
 import { uploadAudio } from '@/lib/firebase';
-import { createTranscriptBatch } from '@/lib/db';
 
 // For testing without auth
 const TEST_USER_ID = 'test-user-123';
 
-// Vercel function timeout is 60s on Hobby, 300s on Pro
-export const maxDuration = 60;
+/**
+ * Process podcast generation (runs in background)
+ */
+async function processPodcast(podcast: Podcast): Promise<void> {
+    try {
+        console.log(`🎙️ Starting podcast generation: ${podcast.id}`);
+        console.log(`📊 Duration type: ${podcast.durationType}`);
+
+        // 1. Extract content
+        await updatePodcast(podcast.id, { status: 'extracting' });
+
+        const { title, content: rawContent, author } = await extractContent(
+            podcast.sourceUrl,
+            podcast.sourceText
+        );
+
+        await updatePodcast(podcast.id, { title, status: 'processing' });
+        console.log(`📝 Extracted: "${title}" (${rawContent.split(/\s+/).length} words)`);
+
+        // 2. Summarize content using OpenAI (for shorter durations)
+        const { summary: content, wordCount } = await summarizeForDuration({
+            content: rawContent,
+            title,
+            durationType: podcast.durationType,
+            author,
+        });
+
+        console.log(`📏 Final content: ${wordCount} words (~${Math.round(wordCount / 150)} min)`);
+
+        // 3. Generate audio
+        await updatePodcast(podcast.id, { status: 'generating_audio' });
+
+        const { audio, duration } = await generateAudio(content, podcast.voiceStyle);
+
+        // 4. Upload to Firebase
+        await updatePodcast(podcast.id, { status: 'uploading' });
+
+        const audioUrl = await uploadAudio(audio, podcast.id);
+
+        // 5. Create transcript segments
+        const sentences = content.split(/(?<=[.!?])\s+/).filter(s => s.trim());
+        const timePerSentence = duration / Math.max(sentences.length, 1);
+
+        const segments = sentences.slice(0, 100).map((text, i) => ({
+            text: text.trim(),
+            startTime: i * timePerSentence,
+            endTime: (i + 1) * timePerSentence,
+        }));
+
+        await createTranscriptBatch(podcast.id, segments);
+
+        // 6. Mark completed
+        await updatePodcast(podcast.id, {
+            status: 'completed',
+            audioUrl,
+            audioDurationSeconds: Math.round(duration),
+            script: content,
+            completedAt: new Date().toISOString(),
+        });
+
+        console.log(`✅ Podcast completed: ${podcast.id} (${Math.round(duration / 60)} min)`);
+
+    } catch (error: any) {
+        console.error(`❌ Podcast failed: ${podcast.id}`, error);
+        await updatePodcast(podcast.id, {
+            status: 'failed',
+            errorMessage: error.message || 'Unknown error',
+        });
+    }
+}
 
 /**
- * POST /api/podcasts - Create new podcast (processes synchronously)
+ * POST /api/podcasts - Create new podcast (starts background processing)
  */
 export async function POST(request: NextRequest) {
     try {
@@ -41,105 +108,22 @@ export async function POST(request: NextRequest) {
             durationType: duration_type || '5min',
         });
 
-        console.log(`🎙️ Starting podcast generation: ${podcast.id}`);
-        console.log(`📊 Duration type: ${podcast.durationType}`);
+        // Process in background (don't await - returns immediately)
+        processPodcast(podcast).catch(console.error);
 
-        try {
-            // 1. Extract content
-            await updatePodcast(podcast.id, { status: 'extracting' });
-
-            const { title, content: rawContent, author } = await extractContent(
-                podcast.sourceUrl,
-                podcast.sourceText
-            );
-
-            await updatePodcast(podcast.id, { title, status: 'processing' });
-            console.log(`📝 Extracted: "${title}" (${rawContent.split(/\s+/).length} words)`);
-
-            // 2. Summarize content using OpenAI (for shorter durations)
-            const { summary: content, wordCount } = await summarizeForDuration({
-                content: rawContent,
-                title,
-                durationType: podcast.durationType,
-                author,
-            });
-
-            console.log(`📏 Final content: ${wordCount} words (~${Math.round(wordCount / 150)} min)`);
-
-            // 3. Generate audio
-            await updatePodcast(podcast.id, { status: 'generating_audio' });
-
-            const { audio, duration } = await generateAudio(content, podcast.voiceStyle);
-
-            // 4. Upload to Firebase
-            await updatePodcast(podcast.id, { status: 'uploading' });
-
-            const audioUrl = await uploadAudio(audio, podcast.id);
-
-            // 5. Create transcript segments
-            const sentences = content.split(/(?<=[.!?])\s+/).filter(s => s.trim());
-            const timePerSentence = duration / Math.max(sentences.length, 1);
-
-            const segments = sentences.slice(0, 100).map((text, i) => ({
-                text: text.trim(),
-                startTime: i * timePerSentence,
-                endTime: (i + 1) * timePerSentence,
-            }));
-
-            await createTranscriptBatch(podcast.id, segments);
-
-            // 6. Mark completed
-            const completedPodcast = await updatePodcast(podcast.id, {
-                status: 'completed',
-                audioUrl,
-                audioDurationSeconds: Math.round(duration),
-                script: content,
-                completedAt: new Date().toISOString(),
-            });
-
-            console.log(`✅ Podcast completed: ${podcast.id} (${Math.round(duration / 60)} min)`);
-
-            // Return the completed podcast with transcript included
-            return NextResponse.json({
-                id: completedPodcast!.id,
-                user_id: completedPodcast!.userId,
-                title: completedPodcast!.title,
-                source_url: completedPodcast!.sourceUrl,
-                voice_style: completedPodcast!.voiceStyle,
-                duration_type: completedPodcast!.durationType,
-                audio_url: completedPodcast!.audioUrl,
-                audio_duration_seconds: completedPodcast!.audioDurationSeconds?.toString(),
-                status: completedPodcast!.status,
-                is_public: completedPodcast!.isPublic ? 'true' : 'false',
-                share_slug: completedPodcast!.shareSlug,
-                created_at: completedPodcast!.createdAt,
-                completed_at: completedPodcast!.completedAt,
-                // Include transcript directly to avoid separate API call issues
-                transcript: {
-                    segments: segments.map((seg, i) => ({
-                        id: `seg-${i}`,
-                        sentence_index: i,
-                        text: seg.text,
-                        start_time: seg.startTime,
-                        end_time: seg.endTime,
-                    })),
-                    total_duration: duration,
-                },
-            }, { status: 201 });
-
-        } catch (error: any) {
-            console.error(`❌ Podcast failed: ${podcast.id}`, error);
-            await updatePodcast(podcast.id, {
-                status: 'failed',
-                errorMessage: error.message || 'Unknown error',
-            });
-
-            return NextResponse.json({
-                id: podcast.id,
-                status: 'failed',
-                error_message: error.message || 'Unknown error',
-            }, { status: 500 });
-        }
+        // Return immediately with pending status
+        return NextResponse.json({
+            id: podcast.id,
+            user_id: podcast.userId,
+            title: podcast.title,
+            source_url: podcast.sourceUrl,
+            voice_style: podcast.voiceStyle,
+            duration_type: podcast.durationType,
+            status: podcast.status,
+            is_public: podcast.isPublic ? 'true' : 'false',
+            share_slug: podcast.shareSlug,
+            created_at: podcast.createdAt,
+        }, { status: 201 });
 
     } catch (error: any) {
         console.error('Error creating podcast:', error);
