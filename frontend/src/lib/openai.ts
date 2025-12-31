@@ -5,10 +5,10 @@
 
 // Target word counts for each duration (at ~150 words per minute speaking rate)
 const DURATION_WORD_TARGETS: Record<string, number> = {
-    '2min': 250,   // Reduced for speed
-    '5min': 600,   // Reduced for speed
-    '10min': 1200, // Reduced for speed
-    'full': 0,     // 0 means no summarization
+    '2min': 300,
+    '5min': 750,
+    '10min': 1500,
+    'full': 0, // 0 means no summarization
 };
 
 interface SummarizeOptions {
@@ -42,11 +42,10 @@ export async function summarizeForDuration({
 
     const targetWords = DURATION_WORD_TARGETS[durationType];
 
-    // For "full" duration, still limit to avoid timeout
+    // For "full" duration, return original content without summarization
     if (targetWords === 0 || durationType === 'full') {
-        console.log('📝 Full duration - limiting to 1500 words for speed');
-        const limited = truncateToWordCount(content, 1500);
-        return { summary: limited, wordCount: limited.split(/\s+/).length };
+        console.log('📝 Full duration requested, skipping summarization');
+        return { summary: content, wordCount: content.split(/\s+/).length };
     }
 
     const originalWordCount = content.split(/\s+/).length;
