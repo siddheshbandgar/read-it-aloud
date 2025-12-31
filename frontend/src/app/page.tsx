@@ -383,7 +383,7 @@ export default function HomePage() {
                 fontSize: '12px',
                 color: colors.textSecondary,
             }}>
-                © 2024 Read-It-Aloud
+                © 2025 Read-It-Aloud
             </footer>
         </div>
     );
