@@ -1,13 +1,11 @@
 /**
- * Simple JSON-based Database
- * Uses a local JSON file for storage (no external dependencies needed)
+ * Serverless-compatible Database
+ * Uses in-memory storage for Vercel (data persists during function lifecycle)
+ * Note: Data does NOT persist across cold starts on Vercel
+ * For production, consider using Vercel KV, PlanetScale, or Supabase
  */
 
-import { promises as fs } from 'fs';
-import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-
-const DB_PATH = path.join(process.cwd(), 'data', 'db.json');
 
 export interface Podcast {
     id: string;
@@ -39,42 +37,18 @@ export interface TranscriptSegment {
     endTime: number;
 }
 
-interface Database {
-    podcasts: Podcast[];
-    transcripts: TranscriptSegment[];
-}
+// In-memory database (persists during function lifecycle)
+// Using globalThis to ensure singleton across hot reloads
+const globalDb = globalThis as typeof globalThis & {
+    __db_podcasts: Podcast[];
+    __db_transcripts: TranscriptSegment[];
+};
 
-/**
- * Ensure data directory exists
- */
-async function ensureDataDir(): Promise<void> {
-    const dataDir = path.dirname(DB_PATH);
-    try {
-        await fs.mkdir(dataDir, { recursive: true });
-    } catch (error) {
-        // Directory might already exist
-    }
+if (!globalDb.__db_podcasts) {
+    globalDb.__db_podcasts = [];
 }
-
-/**
- * Read database from file
- */
-async function readDb(): Promise<Database> {
-    await ensureDataDir();
-    try {
-        const data = await fs.readFile(DB_PATH, 'utf-8');
-        return JSON.parse(data);
-    } catch (error) {
-        return { podcasts: [], transcripts: [] };
-    }
-}
-
-/**
- * Write database to file
- */
-async function writeDb(db: Database): Promise<void> {
-    await ensureDataDir();
-    await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2));
+if (!globalDb.__db_transcripts) {
+    globalDb.__db_transcripts = [];
 }
 
 /**
@@ -94,15 +68,13 @@ export async function createPodcast(data: {
     voiceStyle?: string;
     durationType?: string;
 }): Promise<Podcast> {
-    const db = await readDb();
-
     const podcast: Podcast = {
         id: uuidv4(),
         userId: data.userId,
         title: 'Processing...',
         sourceUrl: data.sourceUrl,
         sourceText: data.sourceText,
-        voiceStyle: data.voiceStyle || 'news_anchor',
+        voiceStyle: data.voiceStyle || 'narrator',
         durationType: data.durationType || 'full',
         status: 'pending',
         isPublic: false,
@@ -111,50 +83,40 @@ export async function createPodcast(data: {
         updatedAt: new Date().toISOString(),
     };
 
-    db.podcasts.push(podcast);
-    await writeDb(db);
-
+    globalDb.__db_podcasts.push(podcast);
     return podcast;
 }
 
 export async function getPodcast(id: string): Promise<Podcast | null> {
-    const db = await readDb();
-    return db.podcasts.find(p => p.id === id) || null;
+    return globalDb.__db_podcasts.find(p => p.id === id) || null;
 }
 
 export async function getPodcastsByUser(userId: string): Promise<Podcast[]> {
-    const db = await readDb();
-    return db.podcasts
+    return globalDb.__db_podcasts
         .filter(p => p.userId === userId)
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 export async function updatePodcast(id: string, updates: Partial<Podcast>): Promise<Podcast | null> {
-    const db = await readDb();
-    const index = db.podcasts.findIndex(p => p.id === id);
-
+    const index = globalDb.__db_podcasts.findIndex(p => p.id === id);
     if (index === -1) return null;
 
-    db.podcasts[index] = {
-        ...db.podcasts[index],
+    globalDb.__db_podcasts[index] = {
+        ...globalDb.__db_podcasts[index],
         ...updates,
         updatedAt: new Date().toISOString(),
     };
 
-    await writeDb(db);
-    return db.podcasts[index];
+    return globalDb.__db_podcasts[index];
 }
 
 export async function deletePodcast(id: string): Promise<boolean> {
-    const db = await readDb();
-    const index = db.podcasts.findIndex(p => p.id === id);
-
+    const index = globalDb.__db_podcasts.findIndex(p => p.id === id);
     if (index === -1) return false;
 
-    db.podcasts.splice(index, 1);
-    db.transcripts = db.transcripts.filter(t => t.podcastId !== id);
+    globalDb.__db_podcasts.splice(index, 1);
+    globalDb.__db_transcripts = globalDb.__db_transcripts.filter(t => t.podcastId !== id);
 
-    await writeDb(db);
     return true;
 }
 
@@ -167,22 +129,17 @@ export async function createTranscriptSegment(data: {
     startTime: number;
     endTime: number;
 }): Promise<TranscriptSegment> {
-    const db = await readDb();
-
     const segment: TranscriptSegment = {
         id: uuidv4(),
         ...data,
     };
 
-    db.transcripts.push(segment);
-    await writeDb(db);
-
+    globalDb.__db_transcripts.push(segment);
     return segment;
 }
 
 export async function getTranscriptSegments(podcastId: string): Promise<TranscriptSegment[]> {
-    const db = await readDb();
-    return db.transcripts
+    return globalDb.__db_transcripts
         .filter(t => t.podcastId === podcastId)
         .sort((a, b) => a.sentenceIndex - b.sentenceIndex);
 }
@@ -191,10 +148,8 @@ export async function createTranscriptBatch(
     podcastId: string,
     segments: { text: string; startTime: number; endTime: number }[]
 ): Promise<void> {
-    const db = await readDb();
-
     segments.forEach((seg, index) => {
-        db.transcripts.push({
+        globalDb.__db_transcripts.push({
             id: uuidv4(),
             podcastId,
             sentenceIndex: index,
@@ -203,6 +158,4 @@ export async function createTranscriptBatch(
             endTime: seg.endTime,
         });
     });
-
-    await writeDb(db);
 }
