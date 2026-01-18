@@ -24,7 +24,7 @@ const GOOGLE_VOICES: Record<string, { name: string; languageCode: string; descri
     podcast_host: {
         name: 'en-US-Studio-O',
         languageCode: 'en-US',
-        description: 'Podcast Host - Friendly, conversational',
+        description: 'Host - Friendly, conversational',
     },
     calm: {
         name: 'en-US-Neural2-A',

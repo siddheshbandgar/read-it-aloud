@@ -8,10 +8,19 @@ import { createPodcast, getPodcastsByUser, updatePodcast, Podcast, createTranscr
 import { extractContent } from '@/lib/extractor';
 import { summarizeForDuration } from '@/lib/openai';
 import { generateAudio } from '@/lib/tts';
-import { uploadAudio } from '@/lib/firebase';
+import { uploadAudioToSupabase } from '@/lib/supabase';
 
-// For testing without auth
-const TEST_USER_ID = 'test-user-123';
+// Header name for user ID
+const USER_ID_HEADER = 'x-user-id';
+
+/**
+ * Get user ID from request headers
+ */
+function getUserId(request: NextRequest): string {
+    const userId = request.headers.get(USER_ID_HEADER);
+    // Fallback to a test ID if no header (for debugging)
+    return userId || 'anonymous-fallback';
+}
 
 /**
  * Process podcast generation (runs in background)
@@ -20,6 +29,7 @@ async function processPodcast(podcast: Podcast): Promise<void> {
     try {
         console.log(`🎙️ Starting podcast generation: ${podcast.id}`);
         console.log(`📊 Duration type: ${podcast.durationType}`);
+        console.log(`👤 User: ${podcast.userId}`);
 
         // 1. Extract content
         await updatePodcast(podcast.id, { status: 'extracting' });
@@ -47,20 +57,34 @@ async function processPodcast(podcast: Podcast): Promise<void> {
 
         const { audio, duration } = await generateAudio(content, podcast.voiceStyle);
 
-        // 4. Upload to Firebase
+        // 4. Upload to Supabase Storage
         await updatePodcast(podcast.id, { status: 'uploading' });
 
-        const audioUrl = await uploadAudio(audio, podcast.id);
+        const audioUrl = await uploadAudioToSupabase(audio, podcast.id);
 
-        // 5. Create transcript segments
+        // 5. Create transcript segments (Proportional timing with pause weighting)
+        // We add a 'pause weight' to each sentence because TTS adds constant pauses regardless of length.
+        // This prevents overestimating long sentences (which caused sync lag).
+        const PAUSE_WEIGHT = 15; // Equivalent to ~1 second of characters
+
         const sentences = content.split(/(?<=[.!?])\s+/).filter(s => s.trim());
-        const timePerSentence = duration / Math.max(sentences.length, 1);
+        const totalWeightedChars = sentences.reduce((acc, s) => acc + s.length + PAUSE_WEIGHT, 0);
 
-        const segments = sentences.slice(0, 100).map((text, i) => ({
-            text: text.trim(),
-            startTime: i * timePerSentence,
-            endTime: (i + 1) * timePerSentence,
-        }));
+        let currentTime = 0;
+        const segments = sentences.slice(0, 100).map((text, i) => {
+            const weightedLength = text.length + PAUSE_WEIGHT;
+            const sentenceDuration = (weightedLength / totalWeightedChars) * duration;
+
+            const startTime = currentTime;
+            const endTime = currentTime + sentenceDuration;
+            currentTime = endTime;
+
+            return {
+                text: text.trim(),
+                startTime,
+                endTime
+            };
+        });
 
         await createTranscriptBatch(podcast.id, segments);
 
@@ -89,6 +113,7 @@ async function processPodcast(podcast: Podcast): Promise<void> {
  */
 export async function POST(request: NextRequest) {
     try {
+        const userId = getUserId(request);
         const body = await request.json();
         const { source_url, source_text, voice_style, duration_type } = body;
 
@@ -99,9 +124,9 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Create podcast record
+        // Create podcast record with user's ID
         const podcast = await createPodcast({
-            userId: TEST_USER_ID,
+            userId,
             sourceUrl: source_url,
             sourceText: source_text,
             voiceStyle: voice_style || 'narrator',
@@ -135,11 +160,12 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * GET /api/podcasts - List user's podcasts
+ * GET /api/podcasts - List user's podcasts (filtered by user ID)
  */
 export async function GET(request: NextRequest) {
     try {
-        const podcasts = await getPodcastsByUser(TEST_USER_ID);
+        const userId = getUserId(request);
+        const podcasts = await getPodcastsByUser(userId);
 
         return NextResponse.json({
             podcasts: podcasts.map(p => ({

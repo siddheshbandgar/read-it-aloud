@@ -58,10 +58,14 @@ export async function summarizeForDuration({
 
     console.log(`🤖 Summarizing ${originalWordCount} → ~${targetWords} words (gpt-4o-mini)`);
 
-    const systemPrompt = `You are a podcast script writer. Create a ${targetWords}-word summary that:
+    const systemPrompt = `You are a narration script writer. Create a ${targetWords}-word summary that:
 - Captures main thesis and key points
 - Flows naturally when read aloud
 - Uses conversational language
+- STRICTLY CONTAINS ONLY SPOKEN TEXT. 
+- DO NOT use stage directions (e.g. [Music fades in], [Pause]).
+- DO NOT use markdown formatting (e.g. **bold**, *italics*, # Headers).
+- DO NOT use sound effects cues.
 Write directly as if reading to a listener.`;
 
     // Truncate input to avoid token limits and speed up
@@ -78,7 +82,7 @@ Write directly as if reading to a listener.`;
                 model: 'gpt-4o-mini',  // Fast model
                 messages: [
                     { role: 'system', content: systemPrompt },
-                    { role: 'user', content: `Title: ${title}\n${author ? `By: ${author}\n` : ''}Create a ${targetWords}-word podcast script:\n\n${inputContent}` },
+                    { role: 'user', content: `Title: ${title}\n${author ? `By: ${author}\n` : ''}Create a ${targetWords}-word narration script:\n\n${inputContent}` },
                 ],
                 temperature: 0.7,
                 max_tokens: Math.ceil(targetWords * 1.3),

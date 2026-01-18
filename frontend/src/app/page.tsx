@@ -1,15 +1,20 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Podcast, Transcript, createPodcast, pollPodcastStatus, getTranscript, listPodcasts } from '@/lib/api';
 import { PodcastForm } from '@/components/PodcastForm';
 import { AudioPlayer } from '@/components/AudioPlayer';
 import { TranscriptView } from '@/components/TranscriptView';
 import { StatusDisplay } from '@/components/StatusDisplay';
+import { Hero } from '@/components/Hero';
+import { LoadingState } from '@/components/LoadingState';
 import { useTranscriptSync } from '@/hooks/useTranscriptSync';
-import { Share2, Headphones, Check, Moon, Sun, History, X, Play, ArrowLeft } from 'lucide-react';
+import { Share2, Headphones, Check, Moon, Sun, History, X, Play, ArrowLeft, Loader2 } from 'lucide-react';
 
 export default function HomePage() {
+    const router = useRouter();
+    const isCancelledRef = useRef(false);
     const [isLoading, setIsLoading] = useState(false);
     const [podcast, setPodcast] = useState<Podcast | null>(null);
     const [transcript, setTranscript] = useState<Transcript | null>(null);
@@ -20,20 +25,27 @@ export default function HomePage() {
     const [showHistory, setShowHistory] = useState(false);
     const [historyPodcasts, setHistoryPodcasts] = useState<Podcast[]>([]);
 
+    // Check local storage for theme
+    useEffect(() => {
+        const saved = localStorage.getItem('darkMode');
+        if (saved === 'true') {
+            setDarkMode(true);
+            document.documentElement.classList.add('dark');
+        }
+    }, []);
+
+    const toggleDarkMode = () => {
+        const newMode = !darkMode;
+        setDarkMode(newMode);
+        localStorage.setItem('darkMode', newMode.toString());
+        if (newMode) document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+    };
+
     const { activeIndex, setActiveIndex } = useTranscriptSync({
         segments: transcript?.segments || [],
         audioElement,
     });
-
-    useEffect(() => {
-        const saved = localStorage.getItem('darkMode');
-        if (saved === 'true') setDarkMode(true);
-    }, []);
-
-    const toggleDarkMode = () => {
-        setDarkMode(!darkMode);
-        localStorage.setItem('darkMode', (!darkMode).toString());
-    };
 
     const loadHistory = async () => {
         try {
@@ -68,22 +80,46 @@ export default function HomePage() {
         setPodcast(null);
         setTranscript(null);
         setError(null);
+        isCancelledRef.current = false;
 
         try {
-            // Create podcast - returns immediately
             const newPodcast = await createPodcast(data);
+
+            // If cancelled during creation, stop here
+            if (isCancelledRef.current) return;
+
             setPodcast(newPodcast);
 
-            // Poll for status updates
-            const completed = await pollPodcastStatus(newPodcast.id, (update) => setPodcast(update));
+            await pollPodcastStatus(newPodcast.id, (update) => {
+                // If cancelled during polling, stop updating
+                if (isCancelledRef.current) return;
 
-            // Get transcript when complete
-            const transcriptData = await getTranscript(completed.id);
-            setTranscript(transcriptData);
+                setPodcast((current) => {
+                    // Also check current state as backup
+                    if (!current || current.id !== update.id) return current;
+                    return update;
+                });
+            });
+
+            if (isCancelledRef.current) return;
+
+            // Final update after polling
+            const transcriptData = await getTranscript(newPodcast.id);
+            setPodcast((current) => {
+                if (current && current.id === newPodcast.id) {
+                    setTranscript(transcriptData);
+                    return current;
+                }
+                return current;
+            });
         } catch (err: any) {
-            setError(err.message || 'Failed to generate podcast');
+            if (!isCancelledRef.current) {
+                setError(err.message || 'Failed to generate podcast');
+            }
         } finally {
-            setIsLoading(false);
+            if (!isCancelledRef.current) {
+                setIsLoading(false);
+            }
         }
     }, []);
 
@@ -115,81 +151,38 @@ export default function HomePage() {
     };
 
     const resetToForm = () => {
+        isCancelledRef.current = true;
         setPodcast(null);
         setTranscript(null);
         setError(null);
-    };
-
-    // Design system
-    const colors = {
-        bg: darkMode ? '#09090b' : '#ffffff',
-        surface: darkMode ? '#18181b' : '#fafafa',
-        border: darkMode ? '#27272a' : '#e4e4e7',
-        text: darkMode ? '#fafafa' : '#09090b',
-        textSecondary: darkMode ? '#a1a1aa' : '#71717a',
-        accent: darkMode ? '#fafafa' : '#09090b',
-        accentText: darkMode ? '#09090b' : '#fafafa',
-        error: '#ef4444',
-        success: '#22c55e',
+        setIsLoading(false);
+        router.push('/');
     };
 
     return (
-        <div style={{
-            minHeight: '100vh',
-            background: colors.bg,
-            color: colors.text,
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-            transition: 'background 0.2s, color 0.2s',
-        }}>
+        <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
             {/* Header */}
-            <header style={{
-                position: 'sticky',
-                top: 0,
-                background: colors.bg,
-                borderBottom: `1px solid ${colors.border}`,
-                zIndex: 100,
-            }}>
-                <div style={{
-                    maxWidth: '640px',
-                    margin: '0 auto',
-                    padding: '16px 24px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <Headphones size={20} strokeWidth={2.5} />
-                        <span style={{ fontSize: '15px', fontWeight: 600, letterSpacing: '-0.3px' }}>
+            <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-md">
+                <div className="max-w-4xl mx-auto px-6 h-16 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 cursor-pointer" onClick={resetToForm}>
+                        <div className="bg-foreground text-background p-1.5 rounded-lg">
+                            <Headphones size={20} strokeWidth={3} />
+                        </div>
+                        <span className="text-base font-bold tracking-tight">
                             Read-It-Aloud
                         </span>
                     </div>
-                    <div style={{ display: 'flex', gap: '4px' }}>
+                    <div className="flex items-center gap-2">
                         <button
                             onClick={loadHistory}
-                            style={{
-                                padding: '8px',
-                                background: 'transparent',
-                                border: 'none',
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                color: colors.textSecondary,
-                                transition: 'color 0.15s',
-                            }}
+                            className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-all"
                             title="History"
                         >
                             <History size={18} />
                         </button>
                         <button
                             onClick={toggleDarkMode}
-                            style={{
-                                padding: '8px',
-                                background: 'transparent',
-                                border: 'none',
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                color: colors.textSecondary,
-                                transition: 'color 0.15s',
-                            }}
+                            className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-all"
                         >
                             {darkMode ? <Sun size={18} /> : <Moon size={18} />}
                         </button>
@@ -199,76 +192,35 @@ export default function HomePage() {
 
             {/* History Modal */}
             {showHistory && (
-                <div style={{
-                    position: 'fixed',
-                    inset: 0,
-                    background: 'rgba(0,0,0,0.6)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 1000,
-                    padding: '20px',
-                    backdropFilter: 'blur(4px)',
-                }}>
-                    <div style={{
-                        background: colors.surface,
-                        borderRadius: '16px',
-                        width: '100%',
-                        maxWidth: '440px',
-                        maxHeight: '70vh',
-                        overflow: 'hidden',
-                        boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
-                    }}>
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '20px 24px',
-                            borderBottom: `1px solid ${colors.border}`,
-                        }}>
-                            <span style={{ fontSize: '15px', fontWeight: 600 }}>History</span>
-                            <button onClick={() => setShowHistory(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, padding: '4px' }}>
-                                <X size={18} />
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+                    <div className="bg-card w-full max-w-md max-h-[70vh] rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="flex items-center justify-between p-5 border-b border-border">
+                            <span className="font-semibold text-lg">Listening History</span>
+                            <button onClick={() => setShowHistory(false)} className="text-muted-foreground hover:text-foreground p-1 rounded-full hover:bg-muted transition-colors">
+                                <X size={20} />
                             </button>
                         </div>
-                        <div style={{ overflowY: 'auto', maxHeight: 'calc(70vh - 65px)' }}>
+                        <div className="overflow-y-auto flex-1 p-2">
                             {historyPodcasts.length === 0 ? (
-                                <div style={{ padding: '48px 24px', textAlign: 'center', color: colors.textSecondary, fontSize: '14px' }}>
-                                    No podcasts yet
+                                <div className="py-12 text-center text-muted-foreground text-sm">
+                                    No narrations yet. Start creating!
                                 </div>
                             ) : (
                                 historyPodcasts.map((p) => (
                                     <div
                                         key={p.id}
                                         onClick={() => playFromHistory(p)}
-                                        style={{
-                                            padding: '16px 24px',
-                                            borderBottom: `1px solid ${colors.border}`,
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '14px',
-                                            transition: 'background 0.15s',
-                                        }}
+                                        className="p-4 rounded-xl hover:bg-muted/50 cursor-pointer flex items-center gap-4 transition-all group"
                                     >
-                                        <div style={{
-                                            width: '40px',
-                                            height: '40px',
-                                            borderRadius: '10px',
-                                            background: colors.accent,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            flexShrink: 0,
-                                        }}>
-                                            <Play size={16} color={colors.accentText} style={{ marginLeft: '2px' }} />
+                                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary flex-shrink-0 group-hover:scale-110 transition-transform">
+                                            <Play size={16} className="ml-1" />
                                         </div>
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontSize: '14px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                {p.title || 'Untitled'}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="font-medium truncate text-sm">
+                                                {p.title || 'Untitled Narration'}
                                             </div>
-                                            <div style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '2px' }}>
-                                                {p.audio_duration_seconds ? `${Math.round(parseFloat(p.audio_duration_seconds) / 60)} min` : ''} · {p.voice_style}
+                                            <div className="text-xs text-muted-foreground mt-1">
+                                                {p.audio_duration_seconds ? `${Math.round(parseFloat(p.audio_duration_seconds) / 60)} min` : 'Unknown'} · {p.voice_style || 'Narrator'}
                                             </div>
                                         </div>
                                     </div>
@@ -279,111 +231,103 @@ export default function HomePage() {
                 </div>
             )}
 
-            {/* Main */}
-            <main style={{ maxWidth: '640px', margin: '0 auto', padding: '32px 24px' }}>
-                {/* Show form or results */}
-                {!podcast?.audio_url ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                        <div style={{
-                            background: colors.surface,
-                            borderRadius: '16px',
-                            padding: '24px',
-                            border: `1px solid ${colors.border}`,
-                        }}>
+            {/* Main Content */}
+            <main className="max-w-3xl mx-auto px-6 py-12">
+
+                {/* Hero / Form / Loading States */}
+                {!podcast?.audio_url && !isLoading && (
+                    <div className="animate-fade-in space-y-12">
+                        {/* Show Hero only when no podcast is present and not loading */}
+                        <Hero darkMode={darkMode} />
+
+                        <div id="generate" className="glass-card rounded-2xl p-8 shadow-sm">
+                            <h2 className="text-2xl font-semibold mb-6 text-center">Create New Narration</h2>
                             <PodcastForm onSubmit={handleSubmit} isLoading={isLoading} darkMode={darkMode} />
                         </div>
-
-                        {error && (
-                            <div style={{
-                                padding: '14px 18px',
-                                background: darkMode ? 'rgba(239,68,68,0.1)' : '#fef2f2',
-                                borderRadius: '12px',
-                                color: colors.error,
-                                fontSize: '14px',
-                                border: `1px solid ${darkMode ? 'rgba(239,68,68,0.2)' : '#fecaca'}`,
-                            }}>
-                                {error}
-                            </div>
-                        )}
-
-                        {podcast && podcast.status !== 'completed' && (
-                            <StatusDisplay podcast={podcast} darkMode={darkMode} />
-                        )}
                     </div>
-                ) : (
-                    /* Player View */
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                )}
+
+                {/* Loading State (Creation or Processing) */}
+                {(isLoading || (podcast && !podcast.audio_url && podcast.status !== 'failed')) && (
+                    <LoadingState podcast={podcast} onCancel={resetToForm} />
+                )}
+
+                {/* Error State */}
+                {podcast && podcast.status === 'failed' && (
+                    <div className="mt-8 p-4 bg-destructive/10 text-destructive rounded-lg text-center animate-in fade-in max-w-lg mx-auto">
+                        <p className="font-semibold">Generation Failed</p>
+                        <p className="text-sm mt-1">{podcast.error_message || 'Something went wrong. Please try again.'}</p>
                         <button
                             onClick={resetToForm}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                background: 'none',
-                                border: 'none',
-                                color: colors.textSecondary,
-                                fontSize: '14px',
-                                cursor: 'pointer',
-                                padding: 0,
-                            }}
+                            className="mt-4 text-xs underline hover:no-underline"
                         >
-                            <ArrowLeft size={16} /> New podcast
+                            Try Again
+                        </button>
+                    </div>
+                )}
+
+                {/* Player View */}
+                {podcast?.audio_url && !isLoading && (
+                    <div className="space-y-8 animate-fade-in max-w-2xl mx-auto">
+                        <button
+                            onClick={resetToForm}
+                            className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                            <ArrowLeft size={16} /> Back to Home
                         </button>
 
-                        <div style={{ textAlign: 'center' }}>
-                            <h2 style={{ fontSize: '20px', fontWeight: 600, letterSpacing: '-0.3px', lineHeight: 1.4 }}>
+                        <div className="text-center space-y-2">
+                            <h2 className="text-2xl md:text-3xl font-bold leading-tight">
                                 {podcast.title}
                             </h2>
-                            <div style={{ fontSize: '13px', color: colors.textSecondary, marginTop: '8px' }}>
-                                {podcast.audio_duration_seconds && `${Math.round(parseFloat(podcast.audio_duration_seconds) / 60)} min`}
-                                {podcast.voice_style && ` · ${podcast.voice_style.replace('_', ' ')}`}
+                            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                                <span>{podcast.audio_duration_seconds && `${Math.round(parseFloat(podcast.audio_duration_seconds) / 60)} min`}</span>
+                                <span>·</span>
+                                <span className="capitalize">{podcast.voice_style?.replace('_', ' ') || 'Narrator'}</span>
                             </div>
                         </div>
 
-                        <AudioPlayer audioUrl={podcast.audio_url} onAudioRef={setAudioElement} onTimeUpdate={handleTimeUpdate} darkMode={darkMode} />
+                        <div className="glass rounded-2xl shadow-lg border border-border/50 overflow-hidden">
+                            <AudioPlayer
+                                audioUrl={podcast.audio_url}
+                                onAudioRef={setAudioElement}
+                                onTimeUpdate={handleTimeUpdate}
+                                darkMode={darkMode}
+                            />
+                        </div>
 
                         {shareUrl && (
-                            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                            <div className="flex justify-center">
                                 <button
                                     onClick={handleCopy}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        padding: '10px 16px',
-                                        background: copied ? colors.success : 'transparent',
-                                        color: copied ? '#fff' : colors.textSecondary,
-                                        border: `1px solid ${copied ? colors.success : colors.border}`,
-                                        borderRadius: '10px',
-                                        fontSize: '13px',
-                                        fontWeight: 500,
-                                        cursor: 'pointer',
-                                        transition: 'all 0.15s',
-                                    }}
+                                    className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-all transform active:scale-95 ${copied
+                                        ? 'bg-green-500 text-white shadow-lg shadow-green-500/25'
+                                        : 'bg-card border border-border hover:border-foreground/20 text-foreground shadow-sm'
+                                        }`}
                                 >
-                                    {copied ? <Check size={14} /> : <Share2 size={14} />}
-                                    {copied ? 'Copied!' : 'Share'}
+                                    {copied ? <Check size={16} /> : <Share2 size={16} />}
+                                    {copied ? 'Copied Link!' : 'Share Narration'}
                                 </button>
                             </div>
                         )}
 
                         {transcript && (
-                            <TranscriptView segments={transcript.segments} activeIndex={activeIndex} onSegmentClick={handleSegmentClick} darkMode={darkMode} />
+                            <div className="glass-card rounded-2xl p-1 border border-border/50">
+                                <TranscriptView
+                                    segments={transcript.segments}
+                                    activeIndex={activeIndex}
+                                    onSegmentClick={handleSegmentClick}
+                                    darkMode={darkMode}
+                                />
+                            </div>
                         )}
                     </div>
                 )}
             </main>
 
             {/* Footer */}
-            <footer style={{
-                borderTop: `1px solid ${colors.border}`,
-                marginTop: '48px',
-                padding: '20px 24px',
-                textAlign: 'center',
-                fontSize: '12px',
-                color: colors.textSecondary,
-            }}>
-                © 2025 Read-It-Aloud
+            <footer className="border-t border-border/40 mt-20 py-8 text-center text-sm text-muted-foreground">
+                <p>© {new Date().getFullYear()} Read-It-Aloud. Built with AI.</p>
             </footer>
         </div>
     );

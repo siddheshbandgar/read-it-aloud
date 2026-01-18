@@ -3,6 +3,22 @@
  * Uses Next.js API routes (local)
  */
 
+import { getAnonymousUserId } from '@/hooks/useAnonymousUser';
+
+// Header name for user ID
+const USER_ID_HEADER = 'x-user-id';
+
+/**
+ * Get headers with user ID included
+ */
+function getAuthHeaders(): Record<string, string> {
+    const userId = getAnonymousUserId();
+    return {
+        'Content-Type': 'application/json',
+        [USER_ID_HEADER]: userId,
+    };
+}
+
 // Types
 export interface Podcast {
     id: string;
@@ -50,9 +66,7 @@ export async function createPodcast(data: {
 }): Promise<Podcast> {
     const response = await fetch('/api/podcasts', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify(data),
     });
 
@@ -68,7 +82,9 @@ export async function createPodcast(data: {
  * Get podcast by ID
  */
 export async function getPodcast(id: string): Promise<Podcast> {
-    const response = await fetch(`/api/podcasts/${id}`);
+    const response = await fetch(`/api/podcasts/${id}`, {
+        headers: getAuthHeaders(),
+    });
 
     if (!response.ok) {
         const error = await response.json();
@@ -112,7 +128,9 @@ export async function pollPodcastStatus(
  * Get transcript for a podcast
  */
 export async function getTranscript(podcastId: string): Promise<Transcript> {
-    const response = await fetch(`/api/podcasts/${podcastId}/transcript`);
+    const response = await fetch(`/api/podcasts/${podcastId}/transcript`, {
+        headers: getAuthHeaders(),
+    });
 
     if (!response.ok) {
         const error = await response.json();
@@ -137,10 +155,12 @@ export async function getPublicTranscript(shareSlug: string): Promise<Transcript
 }
 
 /**
- * List user's podcasts
+ * List user's podcasts (only shows current user's podcasts)
  */
 export async function listPodcasts(): Promise<{ podcasts: Podcast[]; total: number }> {
-    const response = await fetch('/api/podcasts');
+    const response = await fetch('/api/podcasts', {
+        headers: getAuthHeaders(),
+    });
 
     if (!response.ok) {
         const error = await response.json();

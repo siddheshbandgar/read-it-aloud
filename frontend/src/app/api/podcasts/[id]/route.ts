@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getPodcast, deletePodcast, updatePodcast } from '@/lib/db';
-import { deleteAudio } from '@/lib/firebase';
+import { deleteAudioFromSupabase } from '@/lib/supabase';
 
 export async function GET(
     request: NextRequest,
@@ -72,11 +72,11 @@ export async function DELETE(
             );
         }
 
-        // Delete audio from Firebase
+        // Delete audio from Supabase
         try {
-            await deleteAudio(params.id);
+            await deleteAudioFromSupabase(params.id);
         } catch (e) {
-            console.error('Failed to delete audio from Firebase:', e);
+            console.error('Failed to delete audio from Supabase:', e);
         }
 
         // Delete from database

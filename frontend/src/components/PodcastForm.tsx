@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Link, FileText, Loader2, Globe, Twitter } from 'lucide-react';
+import { Link, FileText, Loader2, Globe, Twitter, Mic } from 'lucide-react';
 
 interface PodcastFormProps {
     onSubmit: (data: {
@@ -15,10 +15,10 @@ interface PodcastFormProps {
 }
 
 const DURATION_OPTIONS = [
-    { value: '2min', label: '2 min' },
-    { value: '5min', label: '5 min' },
-    { value: '10min', label: '10 min' },
-    { value: 'full', label: 'Full' },
+    { value: '2min', label: 'Short (2m)' },
+    { value: '5min', label: 'Medium (5m)' },
+    { value: '10min', label: 'Long (10m)' },
+    { value: 'full', label: 'Full Read' },
 ];
 
 const VOICE_OPTIONS = [
@@ -37,16 +37,6 @@ export function PodcastForm({ onSubmit, isLoading, darkMode = false }: PodcastFo
     const [durationType, setDurationType] = useState('5min');
     const [voiceStyle, setVoiceStyle] = useState<string | undefined>(undefined);
     const [error, setError] = useState<string | null>(null);
-
-    const colors = {
-        bg: darkMode ? '#09090b' : '#ffffff',
-        surface: darkMode ? '#18181b' : '#fafafa',
-        border: darkMode ? '#27272a' : '#e4e4e7',
-        text: darkMode ? '#fafafa' : '#09090b',
-        textSecondary: darkMode ? '#a1a1aa' : '#71717a',
-        accent: darkMode ? '#fafafa' : '#09090b',
-        accentText: darkMode ? '#09090b' : '#fafafa',
-    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -79,230 +69,131 @@ export function PodcastForm({ onSubmit, isLoading, darkMode = false }: PodcastFo
     };
 
     return (
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* Tab Toggle */}
-            <div style={{ display: 'flex', gap: '4px', background: colors.surface, padding: '4px', borderRadius: '10px', border: `1px solid ${colors.border}` }}>
-                {[{ key: 'url', label: 'URL', icon: Link }, { key: 'text', label: 'Text', icon: FileText }].map(({ key, label, icon: Icon }) => (
+        <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Input Type Toggle */}
+            <div className="grid grid-cols-2 p-1 bg-secondary rounded-lg">
+                {[
+                    { key: 'url', label: 'Article URL', icon: Link },
+                    { key: 'text', label: 'Paste Text', icon: FileText }
+                ].map(({ key, label, icon: Icon }) => (
                     <button
                         key={key}
                         type="button"
                         onClick={() => setInputMode(key as 'url' | 'text')}
-                        style={{
-                            flex: 1,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            padding: '10px 16px',
-                            fontSize: '13px',
-                            fontWeight: 500,
-                            color: inputMode === key ? colors.text : colors.textSecondary,
-                            background: inputMode === key ? colors.bg : 'transparent',
-                            border: 'none',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            transition: 'all 0.15s',
-                        }}
+                        className={`flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-md transition-all ${inputMode === key
+                            ? 'bg-background text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                            }`}
                     >
-                        <Icon size={14} /> {label}
+                        <Icon size={16} /> {label}
                     </button>
                 ))}
             </div>
 
-            {/* URL Input */}
-            {inputMode === 'url' && (
-                <div>
-                    <input
-                        type="url"
-                        value={sourceUrl}
-                        onChange={(e) => setSourceUrl(e.target.value)}
-                        placeholder="https://example.com/article"
+            {/* Inputs */}
+            <div className="space-y-4">
+                {inputMode === 'url' ? (
+                    <div className="space-y-2">
+                        <input
+                            type="url"
+                            value={sourceUrl}
+                            onChange={(e) => setSourceUrl(e.target.value)}
+                            placeholder="https://example.com/article"
+                            disabled={isLoading}
+                            className="w-full px-4 py-3 bg-background border border-input rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                        />
+                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground pl-1">
+                            <span className="flex items-center gap-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full">
+                                <Globe size={10} /> Web Articles
+                            </span>
+                            <span className="flex items-center gap-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 py-1 rounded-full">
+                                <Twitter size={10} /> X/Twitter Threads
+                            </span>
+                        </div>
+                    </div>
+                ) : (
+                    <textarea
+                        value={sourceText}
+                        onChange={(e) => setSourceText(e.target.value)}
+                        placeholder="Paste your content here..."
+                        rows={6}
                         disabled={isLoading}
-                        style={{
-                            width: '100%',
-                            padding: '14px 16px',
-                            fontSize: '15px',
-                            border: `1px solid ${colors.border}`,
-                            borderRadius: '10px',
-                            background: colors.bg,
-                            color: colors.text,
-                            outline: 'none',
-                            transition: 'border-color 0.15s',
-                        }}
+                        className="w-full px-4 py-3 bg-background border border-input rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none resize-none"
                     />
-                    <p style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '10px' }}>
-                        Supports:
-                    </p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
-                        <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            padding: '4px 10px',
-                            background: darkMode ? 'rgba(59,130,246,0.15)' : '#eff6ff',
-                            borderRadius: '100px',
-                            fontSize: '11px',
-                            fontWeight: 500,
-                            color: darkMode ? '#60a5fa' : '#2563eb',
-                        }}>
-                            <Globe size={11} /> Web Articles
-                        </span>
-                        <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            padding: '4px 10px',
-                            background: darkMode ? 'rgba(99,102,241,0.15)' : '#eef2ff',
-                            borderRadius: '100px',
-                            fontSize: '11px',
-                            fontWeight: 500,
-                            color: darkMode ? '#a5b4fc' : '#4f46e5',
-                        }}>
-                            <Twitter size={11} /> X Threads
-                        </span>
-                        <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            padding: '4px 10px',
-                            background: darkMode ? 'rgba(168,85,247,0.15)' : '#faf5ff',
-                            borderRadius: '100px',
-                            fontSize: '11px',
-                            fontWeight: 500,
-                            color: darkMode ? '#c4b5fd' : '#7c3aed',
-                        }}>
-                            <FileText size={11} /> X Articles
-                        </span>
+                )}
+            </div>
+
+            {/* Settings Components */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                {/* Duration */}
+                <div className="space-y-3">
+                    <label className="text-sm font-semibold text-foreground/80">Length</label>
+                    <div className="grid grid-cols-2 gap-2">
+                        {DURATION_OPTIONS.map((opt) => (
+                            <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => setDurationType(opt.value)}
+                                disabled={isLoading}
+                                className={`px-3 py-2 text-xs font-medium rounded-lg border transition-all ${durationType === opt.value
+                                    ? 'bg-primary text-primary-foreground border-primary'
+                                    : 'bg-background text-muted-foreground border-input hover:border-foreground/30'
+                                    }`}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
                     </div>
                 </div>
-            )}
 
-            {/* Text Input */}
-            {inputMode === 'text' && (
-                <textarea
-                    value={sourceText}
-                    onChange={(e) => setSourceText(e.target.value)}
-                    placeholder="Paste your article or text here..."
-                    rows={4}
-                    disabled={isLoading}
-                    style={{
-                        width: '100%',
-                        padding: '14px 16px',
-                        fontSize: '15px',
-                        border: `1px solid ${colors.border}`,
-                        borderRadius: '10px',
-                        background: colors.bg,
-                        color: colors.text,
-                        resize: 'vertical',
-                        minHeight: '100px',
-                        outline: 'none',
-                        fontFamily: 'inherit',
-                    }}
-                />
-            )}
-
-            {/* Duration */}
-            <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: colors.textSecondary, marginBottom: '8px' }}>
-                    Length
-                </label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                    {DURATION_OPTIONS.map((opt) => (
-                        <button
-                            key={opt.value}
-                            type="button"
-                            onClick={() => setDurationType(opt.value)}
-                            disabled={isLoading}
-                            style={{
-                                flex: 1,
-                                padding: '10px 8px',
-                                fontSize: '13px',
-                                fontWeight: 500,
-                                color: durationType === opt.value ? colors.accentText : colors.text,
-                                background: durationType === opt.value ? colors.accent : 'transparent',
-                                border: `1px solid ${durationType === opt.value ? colors.accent : colors.border}`,
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                transition: 'all 0.15s',
-                            }}
-                        >
-                            {opt.label}
-                        </button>
-                    ))}
+                {/* Voice */}
+                <div className="space-y-3">
+                    <label className="text-sm font-semibold text-foreground/80 flex items-center gap-2">
+                        Voice Style <span className="text-xs font-normal text-muted-foreground">(Optional)</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                        {VOICE_OPTIONS.map((opt) => (
+                            <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => setVoiceStyle(voiceStyle === opt.value ? undefined : opt.value)}
+                                disabled={isLoading}
+                                className={`px-3 py-2 text-xs font-medium rounded-lg border transition-all ${voiceStyle === opt.value
+                                    ? 'bg-primary text-primary-foreground border-primary'
+                                    : 'bg-background text-muted-foreground border-input hover:border-foreground/30'
+                                    }`}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
 
-            {/* Voice */}
-            <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: colors.textSecondary, marginBottom: '8px' }}>
-                    Voice <span style={{ fontWeight: 400 }}>(optional)</span>
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                    {VOICE_OPTIONS.map((opt) => (
-                        <button
-                            key={opt.value}
-                            type="button"
-                            onClick={() => setVoiceStyle(voiceStyle === opt.value ? undefined : opt.value)}
-                            disabled={isLoading}
-                            style={{
-                                padding: '10px 8px',
-                                fontSize: '12px',
-                                fontWeight: 500,
-                                color: voiceStyle === opt.value ? colors.accentText : colors.text,
-                                background: voiceStyle === opt.value ? colors.accent : 'transparent',
-                                border: `1px solid ${voiceStyle === opt.value ? colors.accent : colors.border}`,
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                transition: 'all 0.15s',
-                            }}
-                        >
-                            {opt.label}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* Error */}
+            {/* Error Message */}
             {error && (
-                <div style={{
-                    padding: '12px 14px',
-                    background: darkMode ? 'rgba(239,68,68,0.1)' : '#fef2f2',
-                    borderRadius: '8px',
-                    color: '#ef4444',
-                    fontSize: '13px',
-                }}>
+                <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 text-sm rounded-lg">
                     {error}
                 </div>
             )}
 
-            {/* Submit */}
+            {/* Submit Button */}
             <button
                 type="submit"
                 disabled={isLoading}
-                style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    padding: '14px 20px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    color: colors.accentText,
-                    background: isLoading ? colors.textSecondary : colors.accent,
-                    border: 'none',
-                    borderRadius: '10px',
-                    cursor: isLoading ? 'not-allowed' : 'pointer',
-                    transition: 'opacity 0.15s',
-                }}
+                className="w-full py-4 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl shadow-lg shadow-primary/25 transition-all transform active:scale-[0.99] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-3"
             >
                 {isLoading ? (
                     <>
-                        <Loader2 className="animate-spin" size={16} />
-                        Generating...
+                        <Loader2 className="animate-spin" size={20} />
+                        <span>Creating Narration...</span>
                     </>
                 ) : (
-                    'Generate'
+                    <>
+                        <Mic size={20} />
+                        <span>Generate Audio</span>
+                    </>
                 )}
             </button>
         </form>
