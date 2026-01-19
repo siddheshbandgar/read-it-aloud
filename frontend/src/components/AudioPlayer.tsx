@@ -154,8 +154,8 @@ export function AudioPlayer({ audioUrl, onAudioRef, onTimeUpdate, darkMode = fal
             {/* Main Controls - Stack on mobile */}
             <div className="flex items-center justify-between gap-2">
 
-                {/* Speed Control */}
-                <div className="relative">
+                {/* Speed Control - overflow needed for dropdown */}
+                <div className="relative" style={{ zIndex: showSpeedMenu ? 50 : 'auto' }}>
                     <button
                         onClick={() => setShowSpeedMenu(!showSpeedMenu)}
                         className="flex items-center gap-1 p-2.5 sm:p-2 rounded-xl sm:rounded-lg text-xs font-bold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors min-w-[52px] justify-center"

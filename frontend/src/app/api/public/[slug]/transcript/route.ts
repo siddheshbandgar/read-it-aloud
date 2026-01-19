@@ -3,44 +3,34 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { promises as fs } from 'fs';
-import path from 'path';
-
-const DB_PATH = path.join(process.cwd(), 'data', 'db.json');
-
-async function getDb() {
-    try {
-        const data = await fs.readFile(DB_PATH, 'utf-8');
-        return JSON.parse(data);
-    } catch {
-        return { podcasts: [], transcripts: [] };
-    }
-}
+import { getPodcastByShareSlug, getTranscriptSegments } from '@/lib/db';
 
 export async function GET(
     request: NextRequest,
     { params }: { params: { slug: string } }
 ) {
     try {
-        const db = await getDb();
-        const podcast = db.podcasts.find(
-            (p: any) => p.shareSlug === params.slug && p.isPublic
-        );
+        console.log(`[Public Transcript] Looking up slug: ${params.slug}`);
+
+        const podcast = await getPodcastByShareSlug(params.slug);
 
         if (!podcast) {
+            console.log(`[Public Transcript] Podcast not found for slug: ${params.slug}`);
             return NextResponse.json(
                 { error: 'Podcast not found or not public' },
                 { status: 404 }
             );
         }
 
-        const segments = db.transcripts
-            .filter((t: any) => t.podcastId === podcast.id)
-            .sort((a: any, b: any) => a.sentenceIndex - b.sentenceIndex);
+        console.log(`[Public Transcript] Found podcast: ${podcast.id}`);
+
+        const segments = await getTranscriptSegments(podcast.id);
+
+        console.log(`[Public Transcript] Found ${segments.length} segments`);
 
         return NextResponse.json({
             podcast_id: podcast.id,
-            segments: segments.map((s: any) => ({
+            segments: segments.map((s) => ({
                 id: s.id,
                 sentence_index: s.sentenceIndex,
                 text: s.text,
@@ -48,7 +38,7 @@ export async function GET(
                 end_time: s.endTime,
             })),
             total_duration: segments.length > 0
-                ? Math.max(...segments.map((s: any) => s.endTime))
+                ? Math.max(...segments.map((s) => s.endTime))
                 : 0,
         });
 
