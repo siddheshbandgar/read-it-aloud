@@ -23,43 +23,42 @@ const STAGE_MESSAGES = {
     extracting: {
         title: 'Reading your content...',
         messages: [
-            'Extracting the good stuff from your article 📚',
-            'Our AI is speed-reading like a champ!',
-            'Parsing paragraphs and pulling insights...',
-            'Finding the key points you\'ll love to hear',
+            'Extracting the good stuff 📚',
+            'Speed-reading like a champ!',
+            'Parsing paragraphs...',
+            'Finding key points...',
         ]
     },
     processing: {
         title: 'Crafting your script...',
         messages: [
-            'Writing a narration script just for you ✍️',
-            'Making the content sound natural and engaging',
-            'Adding the perfect flow and pacing...',
-            'Polishing every sentence to perfection',
+            'Writing a narration script ✍️',
+            'Making it sound natural...',
+            'Adding perfect pacing...',
+            'Polishing every sentence...',
         ]
     },
     generating_audio: {
         title: 'Recording your narration...',
         messages: [
-            'Our AI voice actor is in the studio now 🎙️',
-            'Adding that professional radio quality...',
-            'Almost there! Fine-tuning the audio...',
-            'Making it sound like a real narrator!',
-            'This is the fun part - bringing words to life!',
+            'AI voice actor in the studio 🎙️',
+            'Adding that radio quality...',
+            'Almost there!',
+            'Bringing words to life!',
         ]
     },
     uploading: {
         title: 'Almost done!',
         messages: [
-            'Uploading your fresh narration to the cloud ☁️',
+            'Uploading to the cloud ☁️',
             'Just a few more seconds...',
-            'Preparing your listening experience!',
+            'Preparing your audio!',
         ]
     },
     default: {
         title: 'Creating magic...',
         messages: [
-            'Working on something special for you ✨',
+            'Working on something special ✨',
             'AI is doing its thing...',
             'Great things take a moment!',
         ]
@@ -87,31 +86,31 @@ export function LoadingState({ podcast, onCancel }: LoadingStateProps) {
     const Icon = ICONS[iconIndex];
 
     return (
-        <div className="flex flex-col items-center justify-center py-20 animate-fade-in text-center">
+        <div className="flex flex-col items-center justify-center py-12 sm:py-20 animate-fade-in text-center px-4">
             {/* Animated loader */}
-            <div className="relative mb-8">
-                <div className="w-20 h-20 border-4 border-muted rounded-full"></div>
-                <div className="w-20 h-20 border-4 border-primary border-t-transparent rounded-full animate-spin absolute inset-0"></div>
+            <div className="relative mb-6 sm:mb-8">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 border-4 border-muted rounded-full"></div>
+                <div className="w-16 h-16 sm:w-20 sm:h-20 border-4 border-primary border-t-transparent rounded-full animate-spin absolute inset-0"></div>
                 <div className="absolute inset-0 flex items-center justify-center">
-                    <Icon size={28} className="text-primary animate-pulse" />
+                    <Icon size={24} className="text-primary animate-pulse sm:w-7 sm:h-7" />
                 </div>
             </div>
 
             {/* Title */}
-            <h3 className="text-2xl font-semibold mb-3">
+            <h3 className="text-xl sm:text-2xl font-semibold mb-2 sm:mb-3">
                 {stageInfo.title}
             </h3>
 
             {/* Rotating message */}
             <p
                 key={messageIndex}
-                className="text-muted-foreground text-lg max-w-md animate-fade-in"
+                className="text-muted-foreground text-sm sm:text-lg max-w-xs sm:max-w-md animate-fade-in"
             >
                 {stageInfo.messages[messageIndex]}
             </p>
 
             {/* Progress dots */}
-            <div className="flex gap-2 mt-8">
+            <div className="flex gap-1.5 sm:gap-2 mt-6 sm:mt-8">
                 {['pending', 'extracting', 'processing', 'generating_audio', 'uploading'].map((stage, i) => {
                     const currentIndex = ['pending', 'extracting', 'processing', 'generating_audio', 'uploading'].indexOf(status);
                     const isActive = i === currentIndex;
@@ -120,25 +119,25 @@ export function LoadingState({ podcast, onCancel }: LoadingStateProps) {
                     return (
                         <div
                             key={stage}
-                            className={`w-2 h-2 rounded-full transition-all duration-300 ${isActive
-                                ? 'w-6 bg-primary'
+                            className={`h-1.5 sm:h-2 rounded-full transition-all duration-300 ${isActive
+                                ? 'w-4 sm:w-6 bg-primary'
                                 : isComplete
-                                    ? 'bg-primary'
-                                    : 'bg-muted'
+                                    ? 'w-1.5 sm:w-2 bg-primary'
+                                    : 'w-1.5 sm:w-2 bg-muted'
                                 }`}
                         />
                     );
                 })}
             </div>
 
-            {/* Fun tip */}
-            <p className="text-xs text-muted-foreground/60 mt-6 max-w-sm">
-                💡 Tip: You can paste Twitter/X threads too - we'll convert those into audio!
+            {/* Fun tip - smaller on mobile */}
+            <p className="text-xs text-muted-foreground/60 mt-4 sm:mt-6 max-w-xs sm:max-w-sm px-4">
+                💡 Tip: You can paste Twitter/X threads too!
             </p>
 
-            {/* Time-killer Game */}
+            {/* Time-killer Game - Hidden on very small screens */}
             {(status === 'processing' || status === 'generating_audio' || status === 'extracting') && (
-                <div className="animate-fade-in mt-8 w-full max-w-2xl">
+                <div className="animate-fade-in mt-6 sm:mt-8 w-full max-w-2xl px-2 sm:px-0">
                     <MiniGame />
                 </div>
             )}
@@ -147,10 +146,10 @@ export function LoadingState({ podcast, onCancel }: LoadingStateProps) {
             {onCancel && (
                 <button
                     onClick={onCancel}
-                    className="mt-12 flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-muted-foreground hover:text-white hover:bg-red-500 rounded-full transition-all duration-200 group border border-transparent hover:border-red-600 hover:shadow-lg hover:shadow-red-500/20"
+                    className="mt-8 sm:mt-12 flex items-center gap-2 px-5 sm:px-6 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-muted-foreground hover:text-white hover:bg-red-500 rounded-full transition-all duration-200 group border border-transparent hover:border-red-600"
                 >
-                    <XCircle size={16} className="group-hover:scale-110 transition-transform" />
-                    <span>Cancel Generation</span>
+                    <XCircle size={14} className="group-hover:scale-110 transition-transform sm:w-4 sm:h-4" />
+                    <span>Cancel</span>
                 </button>
             )}
         </div>

@@ -88,13 +88,14 @@ async function processPodcast(podcast: Podcast): Promise<void> {
 
         await createTranscriptBatch(podcast.id, segments);
 
-        // 6. Mark completed
+        // 6. Mark completed (and make public for sharing)
         await updatePodcast(podcast.id, {
             status: 'completed',
             audioUrl,
             audioDurationSeconds: Math.round(duration),
             script: content,
             completedAt: new Date().toISOString(),
+            isPublic: true, // Auto-enable sharing
         });
 
         console.log(`✅ Podcast completed: ${podcast.id} (${Math.round(duration / 60)} min)`);

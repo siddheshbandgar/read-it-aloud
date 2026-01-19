@@ -1,11 +1,12 @@
 /**
- * Serverless-compatible Database
- * Uses in-memory storage for Vercel (data persists during function lifecycle)
- * Note: Data does NOT persist across cold starts on Vercel
- * For production, consider using Vercel KV, PlanetScale, or Supabase
+ * Supabase Database Service
+ * Persistent storage using Supabase Postgres
  */
 
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
+
+// ============== Types ==============
 
 export interface Podcast {
     id: string;
@@ -37,18 +38,29 @@ export interface TranscriptSegment {
     endTime: number;
 }
 
-// In-memory database (persists during function lifecycle)
-// Using globalThis to ensure singleton across hot reloads
-const globalDb = globalThis as typeof globalThis & {
-    __db_podcasts: Podcast[];
-    __db_transcripts: TranscriptSegment[];
-};
+// ============== Supabase Client ==============
 
-if (!globalDb.__db_podcasts) {
-    globalDb.__db_podcasts = [];
-}
-if (!globalDb.__db_transcripts) {
-    globalDb.__db_transcripts = [];
+let supabaseClient: SupabaseClient | null = null;
+
+function getSupabaseClient(): SupabaseClient {
+    if (supabaseClient) {
+        return supabaseClient;
+    }
+
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!url || !serviceKey) {
+        throw new Error('Missing Supabase configuration. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+    }
+
+    supabaseClient = createClient(url, serviceKey, {
+        auth: {
+            persistSession: false,
+        },
+    });
+
+    return supabaseClient;
 }
 
 /**
@@ -57,6 +69,46 @@ if (!globalDb.__db_transcripts) {
 function generateShareSlug(): string {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     return Array.from({ length: 10 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+/**
+ * Convert database row to Podcast object (snake_case to camelCase)
+ */
+function rowToPodcast(row: any): Podcast {
+    return {
+        id: row.id,
+        userId: row.user_id,
+        title: row.title,
+        sourceUrl: row.source_url,
+        sourceText: row.source_text,
+        tone: row.tone,
+        voiceStyle: row.voice_style,
+        durationType: row.duration_type,
+        script: row.script,
+        audioUrl: row.audio_url,
+        audioDurationSeconds: row.audio_duration_seconds,
+        status: row.status,
+        errorMessage: row.error_message,
+        isPublic: row.is_public,
+        shareSlug: row.share_slug,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        completedAt: row.completed_at,
+    };
+}
+
+/**
+ * Convert database row to TranscriptSegment object
+ */
+function rowToSegment(row: any): TranscriptSegment {
+    return {
+        id: row.id,
+        podcastId: row.podcast_id,
+        sentenceIndex: row.sentence_index,
+        text: row.text,
+        startTime: row.start_time,
+        endTime: row.end_time,
+    };
 }
 
 // ============== Podcast Operations ==============
@@ -68,54 +120,127 @@ export async function createPodcast(data: {
     voiceStyle?: string;
     durationType?: string;
 }): Promise<Podcast> {
-    const podcast: Podcast = {
-        id: uuidv4(),
-        userId: data.userId,
-        title: 'Processing...',
-        sourceUrl: data.sourceUrl,
-        sourceText: data.sourceText,
-        voiceStyle: data.voiceStyle || 'narrator',
-        durationType: data.durationType || 'full',
-        status: 'pending',
-        isPublic: false,
-        shareSlug: generateShareSlug(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-    };
+    const client = getSupabaseClient();
 
-    globalDb.__db_podcasts.push(podcast);
-    return podcast;
+    const { data: row, error } = await client
+        .from('podcasts')
+        .insert({
+            user_id: data.userId,
+            source_url: data.sourceUrl,
+            source_text: data.sourceText,
+            voice_style: data.voiceStyle || 'narrator',
+            duration_type: data.durationType || 'full',
+            share_slug: generateShareSlug(),
+        })
+        .select()
+        .single();
+
+    if (error) {
+        console.error('Error creating podcast:', error);
+        throw new Error(`Failed to create podcast: ${error.message}`);
+    }
+
+    return rowToPodcast(row);
 }
 
 export async function getPodcast(id: string): Promise<Podcast | null> {
-    return globalDb.__db_podcasts.find(p => p.id === id) || null;
+    const client = getSupabaseClient();
+
+    const { data: row, error } = await client
+        .from('podcasts')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+    if (error) {
+        if (error.code === 'PGRST116') return null; // Not found
+        console.error('Error getting podcast:', error);
+        throw new Error(`Failed to get podcast: ${error.message}`);
+    }
+
+    return row ? rowToPodcast(row) : null;
 }
 
 export async function getPodcastsByUser(userId: string): Promise<Podcast[]> {
-    return globalDb.__db_podcasts
-        .filter(p => p.userId === userId)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const client = getSupabaseClient();
+
+    const { data: rows, error } = await client
+        .from('podcasts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error getting podcasts by user:', error);
+        throw new Error(`Failed to get podcasts: ${error.message}`);
+    }
+
+    return (rows || []).map(rowToPodcast);
+}
+
+export async function getPodcastByShareSlug(slug: string): Promise<Podcast | null> {
+    const client = getSupabaseClient();
+
+    const { data: row, error } = await client
+        .from('podcasts')
+        .select('*')
+        .eq('share_slug', slug)
+        .eq('is_public', true)
+        .single();
+
+    if (error) {
+        if (error.code === 'PGRST116') return null; // Not found
+        console.error('Error getting podcast by share slug:', error);
+        throw new Error(`Failed to get podcast: ${error.message}`);
+    }
+
+    return row ? rowToPodcast(row) : null;
 }
 
 export async function updatePodcast(id: string, updates: Partial<Podcast>): Promise<Podcast | null> {
-    const index = globalDb.__db_podcasts.findIndex(p => p.id === id);
-    if (index === -1) return null;
+    const client = getSupabaseClient();
 
-    globalDb.__db_podcasts[index] = {
-        ...globalDb.__db_podcasts[index],
-        ...updates,
-        updatedAt: new Date().toISOString(),
+    // Convert camelCase to snake_case for database
+    const dbUpdates: Record<string, any> = {
+        updated_at: new Date().toISOString(),
     };
 
-    return globalDb.__db_podcasts[index];
+    if (updates.title !== undefined) dbUpdates.title = updates.title;
+    if (updates.script !== undefined) dbUpdates.script = updates.script;
+    if (updates.audioUrl !== undefined) dbUpdates.audio_url = updates.audioUrl;
+    if (updates.audioDurationSeconds !== undefined) dbUpdates.audio_duration_seconds = updates.audioDurationSeconds;
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.errorMessage !== undefined) dbUpdates.error_message = updates.errorMessage;
+    if (updates.isPublic !== undefined) dbUpdates.is_public = updates.isPublic;
+    if (updates.completedAt !== undefined) dbUpdates.completed_at = updates.completedAt;
+
+    const { data: row, error } = await client
+        .from('podcasts')
+        .update(dbUpdates)
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (error) {
+        console.error('Error updating podcast:', error);
+        throw new Error(`Failed to update podcast: ${error.message}`);
+    }
+
+    return row ? rowToPodcast(row) : null;
 }
 
 export async function deletePodcast(id: string): Promise<boolean> {
-    const index = globalDb.__db_podcasts.findIndex(p => p.id === id);
-    if (index === -1) return false;
+    const client = getSupabaseClient();
 
-    globalDb.__db_podcasts.splice(index, 1);
-    globalDb.__db_transcripts = globalDb.__db_transcripts.filter(t => t.podcastId !== id);
+    const { error } = await client
+        .from('podcasts')
+        .delete()
+        .eq('id', id);
+
+    if (error) {
+        console.error('Error deleting podcast:', error);
+        throw new Error(`Failed to delete podcast: ${error.message}`);
+    }
 
     return true;
 }
@@ -129,33 +254,65 @@ export async function createTranscriptSegment(data: {
     startTime: number;
     endTime: number;
 }): Promise<TranscriptSegment> {
-    const segment: TranscriptSegment = {
-        id: uuidv4(),
-        ...data,
-    };
+    const client = getSupabaseClient();
 
-    globalDb.__db_transcripts.push(segment);
-    return segment;
+    const { data: row, error } = await client
+        .from('transcript_segments')
+        .insert({
+            podcast_id: data.podcastId,
+            sentence_index: data.sentenceIndex,
+            text: data.text,
+            start_time: data.startTime,
+            end_time: data.endTime,
+        })
+        .select()
+        .single();
+
+    if (error) {
+        console.error('Error creating transcript segment:', error);
+        throw new Error(`Failed to create transcript segment: ${error.message}`);
+    }
+
+    return rowToSegment(row);
 }
 
 export async function getTranscriptSegments(podcastId: string): Promise<TranscriptSegment[]> {
-    return globalDb.__db_transcripts
-        .filter(t => t.podcastId === podcastId)
-        .sort((a, b) => a.sentenceIndex - b.sentenceIndex);
+    const client = getSupabaseClient();
+
+    const { data: rows, error } = await client
+        .from('transcript_segments')
+        .select('*')
+        .eq('podcast_id', podcastId)
+        .order('sentence_index', { ascending: true });
+
+    if (error) {
+        console.error('Error getting transcript segments:', error);
+        throw new Error(`Failed to get transcript segments: ${error.message}`);
+    }
+
+    return (rows || []).map(rowToSegment);
 }
 
 export async function createTranscriptBatch(
     podcastId: string,
     segments: { text: string; startTime: number; endTime: number }[]
 ): Promise<void> {
-    segments.forEach((seg, index) => {
-        globalDb.__db_transcripts.push({
-            id: uuidv4(),
-            podcastId,
-            sentenceIndex: index,
-            text: seg.text,
-            startTime: seg.startTime,
-            endTime: seg.endTime,
-        });
-    });
+    const client = getSupabaseClient();
+
+    const rows = segments.map((seg, index) => ({
+        podcast_id: podcastId,
+        sentence_index: index,
+        text: seg.text,
+        start_time: seg.startTime,
+        end_time: seg.endTime,
+    }));
+
+    const { error } = await client
+        .from('transcript_segments')
+        .insert(rows);
+
+    if (error) {
+        console.error('Error creating transcript batch:', error);
+        throw new Error(`Failed to create transcript batch: ${error.message}`);
+    }
 }

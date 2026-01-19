@@ -3,29 +3,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { promises as fs } from 'fs';
-import path from 'path';
-
-const DB_PATH = path.join(process.cwd(), 'data', 'db.json');
-
-async function getDb() {
-    try {
-        const data = await fs.readFile(DB_PATH, 'utf-8');
-        return JSON.parse(data);
-    } catch {
-        return { podcasts: [], transcripts: [] };
-    }
-}
+import { getPodcastByShareSlug, getTranscriptSegments } from '@/lib/db';
 
 export async function GET(
     request: NextRequest,
     { params }: { params: { slug: string } }
 ) {
     try {
-        const db = await getDb();
-        const podcast = db.podcasts.find(
-            (p: any) => p.shareSlug === params.slug && p.isPublic
-        );
+        const podcast = await getPodcastByShareSlug(params.slug);
 
         if (!podcast) {
             return NextResponse.json(
