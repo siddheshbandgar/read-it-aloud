@@ -10,11 +10,14 @@ export async function GET(
     { params }: { params: { slug: string } }
 ) {
     try {
+        console.log(`[Public API] Looking up slug: ${params.slug}`);
         const podcast = await getPodcastByShareSlug(params.slug);
+        console.log(`[Public API] Found podcast:`, podcast ? podcast.id : 'null');
 
         if (!podcast) {
+            console.log(`[Public API] No podcast found for slug: ${params.slug}`);
             return NextResponse.json(
-                { error: 'Podcast not found or not public' },
+                { error: 'Podcast not found or not public', slug: params.slug },
                 { status: 404 }
             );
         }

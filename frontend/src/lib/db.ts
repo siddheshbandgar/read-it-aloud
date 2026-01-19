@@ -181,6 +181,18 @@ export async function getPodcastsByUser(userId: string): Promise<Podcast[]> {
 export async function getPodcastByShareSlug(slug: string): Promise<Podcast | null> {
     const client = getSupabaseClient();
 
+    console.log(`[DB] Looking for podcast with share_slug: ${slug}`);
+
+    // First, check if any podcast exists with this slug (ignore is_public for debugging)
+    const { data: anyRow, error: anyError } = await client
+        .from('podcasts')
+        .select('id, share_slug, is_public, title')
+        .eq('share_slug', slug)
+        .single();
+
+    console.log(`[DB] Any podcast with slug?`, anyRow || 'none', anyError?.message || 'no error');
+
+    // Now get the public one
     const { data: row, error } = await client
         .from('podcasts')
         .select('*')
@@ -189,11 +201,13 @@ export async function getPodcastByShareSlug(slug: string): Promise<Podcast | nul
         .single();
 
     if (error) {
+        console.log(`[DB] Error finding public podcast:`, error.code, error.message);
         if (error.code === 'PGRST116') return null; // Not found
         console.error('Error getting podcast by share slug:', error);
         throw new Error(`Failed to get podcast: ${error.message}`);
     }
 
+    console.log(`[DB] Found public podcast:`, row?.id);
     return row ? rowToPodcast(row) : null;
 }
 
